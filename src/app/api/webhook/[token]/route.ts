@@ -1,9 +1,38 @@
-import { initBot, getBot } from "@/bot/index";
 import { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-let botInitialized = false;
+// Global bot instance - survives across requests on the same Vercel instance
+let bot: any = null;
+let initialized = false;
+
+async function getOrCreateBot() {
+  if (bot && initialized) return bot;
+
+  const TelegramBot = (await import("node-telegram-bot-api")).default;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("No bot token");
+
+  // Create bot in webhook-only mode (no polling)
+  bot = new TelegramBot(token, { webHook: true });
+
+  // Setup tables if needed
+  if (!initialized) {
+    const { ensureTablesExist } = await import("@/bot/setup");
+    await ensureTablesExist();
+
+    const { initializeDefaultPlans } = await import("@/bot/db");
+    await initializeDefaultPlans();
+
+    const { registerAllHandlers } = await import("@/bot/index");
+    registerAllHandlers(bot);
+
+    initialized = true;
+    console.log("✅ Bot initialized for webhook mode");
+  }
+
+  return bot;
+}
 
 export async function POST(
   request: NextRequest,
@@ -11,33 +40,26 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  // Verify the token matches our bot token
+  // Verify token
   if (token !== process.env.TELEGRAM_BOT_TOKEN) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // Ensure bot is initialized
-  if (!botInitialized) {
-    await initBot();
-    botInitialized = true;
-  }
-
-  const bot = getBot();
-  if (!bot) {
-    return new Response("Bot not initialized", { status: 500 });
-  }
-
   try {
+    const b = await getOrCreateBot();
     const update = await request.json();
-    // Process the update through the bot's internal handler
-    (bot as any).processUpdate(update);
-    return new Response("OK", { status: 200 });
+    b.processUpdate(update);
   } catch (error) {
     console.error("Webhook error:", error);
-    return new Response("Error", { status: 500 });
+    // Reset so it re-creates next request
+    bot = null;
+    initialized = false;
   }
+
+  // ALWAYS return 200 to Telegram (prevents webhook removal)
+  return new Response("OK", { status: 200 });
 }
 
 export async function GET() {
-  return Response.json({ ok: true, message: "Telegram webhook endpoint is active" });
+  return Response.json({ ok: true, message: "Webhook endpoint active" });
 }

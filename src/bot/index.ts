@@ -118,6 +118,17 @@ export async function initBot() {
   return bot;
 }
 
+/**
+ * Register all message/callback handlers on a bot instance.
+ * Used by both initBot() and the webhook handler.
+ */
+export function registerAllHandlers(botInstance: TelegramBot) {
+  registerStartCommand(botInstance);
+  registerCommandHandlers(botInstance);
+  registerMessageHandler(botInstance);
+  registerCallbackQueryHandler(botInstance);
+}
+
 function isAdmin(telegramId: string): boolean {
   return telegramId === ADMIN_ID;
 }

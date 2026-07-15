@@ -1,24 +1,23 @@
-import { ensureTablesExist } from "@/bot/setup";
-import { initializeDefaultPlans } from "@/bot/db";
-
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const tablesCreated = await ensureTablesExist();
-    if (!tablesCreated) {
+    const { ensureTablesExist } = await import("@/bot/setup");
+    const tablesReady = await ensureTablesExist();
+
+    if (!tablesReady) {
       return Response.json(
-        { ok: false, error: "Failed to create database tables. Check your DATABASE_URL." },
+        { ok: false, error: "Failed to create tables. Check DATABASE_URL." },
         { status: 500 }
       );
     }
 
-    // Insert default investment plans
+    const { initializeDefaultPlans } = await import("@/bot/db");
     await initializeDefaultPlans();
 
     return Response.json({
       ok: true,
-      message: "Database setup complete! All tables created and default plans inserted. Visit /api/bot to start the bot.",
+      message: "Database tables created and default plans inserted successfully!",
     });
   } catch (error) {
     console.error("Setup error:", error);
